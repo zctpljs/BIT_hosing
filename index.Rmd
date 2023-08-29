@@ -1,6 +1,6 @@
 ---
 title: "Typo Analysis"
-author: "Louis Shaw"
+author: "Louis Shaw - BIT"
 date: "`r format(Sys.Date())`"
 output:
   html_document:
@@ -253,6 +253,7 @@ dt %>%
     rename(n_cell=n) %>% 
     knitr::kable()
 ```
+
 Controlling for covariates eliminates the significance of the interaction term. Nonetheless, it is substantial relative to other advert coefficients. The coefficient means gamblers in the good practice arm have `r round(exp(0.3536),2)` times the odds of playing relative to non-gamblers in the good practice arm, all else equal.  
 
 Next let's have a look at whether the same result holds for our slot sample. 
@@ -274,6 +275,7 @@ dt %>%
     mutate(diff=paste0(100*round(diff,3), "pp")) %>% 
 knitr::kable()
 ```
+
 The difference is somewhat smaller now - let's have a look controlling for covariates.
 ```{r}
 dt2 <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
@@ -309,6 +311,7 @@ dt2 %>%
 
 rm(dt2)
 ```
+
 Here we see that whilst the good practice arm appears to have a positive impact on all gamblers (previous sub-group) but it has an outside impact on non-slot gamblers. Again, please note that we're doing a lot of underpowered work here, but the results are suggestive.
 
 
@@ -425,6 +428,7 @@ data.table::rbindlist(hold) %>%
     rbind(data.table(name="Sample size (n)", GP_mean=736, Typo_mean=1145, normalised_diff=NA_real_), .) %>% 
     knitr::kable()
 ```
+
 Again all normalised differences are less than 0.25 indicating reasonable balance. The typo sample were more likely to be gamblers though were 3.8pp less likely to be a problem gambler, had lower total PGSI scores and were less likely to have a degree. 
 
 It's worth noting that the typo individuals were recruited later, though the median difference is ~ 13 days, and the new Lucid sample was collected in the 7 days immediately after the 5th of June.
@@ -470,6 +474,7 @@ dt %>%
     mutate(rtp_pp_false=paste0(100*round(rtp_pp_false,3),"%")) %>% 
     knitr::kable()
 ```
+
 So a 6.2pp increase in the proportion of people recalling that the rtp wasn't 94%. Does this survive controlling for observable differences? Because of the same percentage recognising it as a gambling advert, I've excluded those who didn't answer this question. 
 ```{r}
 dt %>% 
@@ -487,6 +492,7 @@ dt %>%
     # rename(n_cell=n) %>%
     knitr::kable()
 ```
+
 So there's evidence of an (exploratory) significant increase in those correctly identifying the RTP amongst those who identified a gambling advert on their feed controlling for our usual alternatives. 
 
 Is there any evidence that this result is driven primarily by those with prior exposure to slots? Gambling?
@@ -505,6 +511,7 @@ dt %>%
     mutate(diff=paste0(100*round(diff,3), "pp")) %>% 
     knitr::kable()
 ```
+
 So the non-gamblers with the typo were less than 1pp less likely to conclude the RTP was false compared to the usual good practice arm, whilst gamblers were 6.4pp more likely than the normal good practice arm. Or as a diagram:
 ```{r echo=FALSE} 
 plot_dt <- dt %>% 
@@ -537,6 +544,7 @@ plot_dt %>%
               aes(x=rtp_pp, y=treatment, label=paste0(100*round(rtp_pp,2),"%")), alpha=0.05, size=3, nudge_y=0.2, nudge_x=-0.02) 
 
 ```
+
 We're underpowered here, but does that survive covariates?
 ```{r}
 dt %>% 
@@ -559,6 +567,7 @@ dt %>%
     knitr::kable()
 ```
 
+No! But the effect is being driven by gamblers (just too small).
 ```{r}
 dt %>% 
     filter(panel=="Lucid") %>%
@@ -581,6 +590,7 @@ dt %>%
     rename(n_cell=n) %>%
     knitr::kable()
 ```
+
 We see that the marginal effect of the good practice arm is roughly twice as large for slot gamblers than non-slot gamblers, though neither are statistically significant. 
 
 To conclude this section - the typo led to a 6.2pp increase in the proportion of people correctly identifying from the social media feed that the advert didn't have a 94% RTP. The raw values indicate that this is driven mostly by gamblers, with slot gamblers being particularly impacted - though the subgrouping results weren't statistically significant so are at best suggestive. 
@@ -613,6 +623,7 @@ dt %>%
     knitr::kable()
 
 ```
+
 We see there's a significant reduction in those stating they'd like to play - this suggests people are reading the caption. 
 
 ## Play %
@@ -639,6 +650,7 @@ dt %>%
     rename(cov_p.value=p.value) %>%
     knitr::kable(caption="First play decision by treatment arm - Lucid only")
 ```
+
 There was a 4pp reduction in the proportion of people saying they wanted to play as a result of the typo. This is marginally significant (the difference in p.values between Ease of Winning and Typo is due to both sample size and covariates).
 
 ## why_play chance/earn versus why_not_play chance/lose
@@ -656,6 +668,7 @@ dt %>%
     arrange(treatment) %>% 
     knitr::kable()
 ```
+
 So people in the good practice arm who chose to play said they wanted to earn more money in the ~ same proportion, but were 4pp less likely to say they had a good chance of winning. Not too large an effect. 
 
 ```{r}
@@ -670,6 +683,7 @@ dt %>%
     arrange(treatment) %>% 
     knitr::kable()
 ```
+
 We see the percentage of people saying they didn't play because they had a bad chance of winning goes up 4pp, and those who say they didn't want to lose money goes up 3pp. These are the highest rates of any treatment arm, suggesting those that chose not to play read the typo. 
 
 ## win_subj (more tokens)
@@ -689,6 +703,7 @@ dt %>%
     knitr::kable()
     
 ```
+
 There's roughly a 8pp reduction those saying they think they will definitely or probably win money as a result of the typo. Likewise there's a 11pp increase in those saying they'll lose money. This question was asked to both those who chose to play and those who chose not to. 
 
 I find it interesting the good practice arm's win % is highest, and the typo arm's lose % is highest; this may indicate including RTP information is increasing price sensitivity but that the usual RTP is seen as good value. More on this in section 4. 
@@ -704,6 +719,7 @@ dt %>%
     arrange(treatment) %>% 
     knitr::kable()
 ```
+
 So the typo brought this back into line with the rest of the group, but the Good Practice arm led to large increases in those thinking they'd win money. I think this explains a good chunk of the backfire we saw: £7 loss for every £100 bet doesn't sound that bad. 
 
 # Is there another arm we could add?
@@ -899,6 +915,7 @@ dt %>%
               .by = c("trial"))
 
 ```
+
 The return to player in the odds trial was 37%?! That's odd. Digging a little deeper:
 ```{r}
 dt %>% 
@@ -910,6 +927,7 @@ dt %>%
               rtp=sum(total_won)/sum(total_bet), 
               .by = c("trial", "free_spins"))
 ```
+
 We know that you have to win 0.7 if you did 10 spins during the free spins. There looks like a glitch in that those who bet £1 in the odds trial had a total win of £0.20, which given the blocking must be wrong.  
 
 ```{r}
@@ -922,6 +940,7 @@ dt %>%
     head() %>% 
     knitr::kable()
 ```
+
 I think this means we should reject the odds data altogether and focus on the other two trials. It's either that the coding of total_win/total_bet was wrong or there was an actual glitch in the game during the trial. 
 
 ```{r}
@@ -935,9 +954,10 @@ dt %>%
     knitr::kable()
 
 ```
+
 Across nearly 440,000 spins we have an empirical return to player of 74%. This is because our slot game is not independent (outcomes are not uniformly distributed, and so fail the GCs operator technical standards). 
 
-## What's the binary % of sessions that win money, excluding free spins?
+## What's the % of sessions that win money, excluding free spins?
 
 I'm going to use the history of the non-free spins Fruit Rush experiments to avoid the issue around different play behaviour when playing with house money.
 ```{r}
@@ -964,8 +984,8 @@ dt %>%
                        minor_breaks = seq(0.1,0.9,0.05), labels=scales::percent_format()) +
     scale_x_continuous(expand=c(0,0), breaks=seq(-2,1,0.5), minor_breaks=seq(-2,1,0.1), labels=scales::dollar_format(prefix="£")) + 
     theme_classic() + 
-    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", size=0.3),
-          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", size=0.3),
+    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", linewidth=0.3),
+          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", linewidth=0.3),
           plot.caption = element_text(hjust=0)) + 
     geom_text(aes(x=-1, y=0.823415+0.04, label="\"82% of sessions lose money on this game\""), colour=BITBlue) + 
     labs(y="Fraction of the data", x="Net Position (£)", 
@@ -1023,6 +1043,7 @@ dt %>%
          subtitle="Free-spins sessions excluded; first round AS and simplified volatility odds", 
          caption="N=5,708 slot game sessions collected in our odds comprehension (n=250) and activity statement (n=5,458) experiments.\nOnly first round of activity statement trial included, and only simplified loss - volatility arm of odds included.\nData collected by BIT March 2022 - July 2023")
 ```
+
 A few things are worth noting:
 
 * Our slot game is played with small stakes and house money
