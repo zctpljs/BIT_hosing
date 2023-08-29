@@ -1,0 +1,1329 @@
+---
+title: "Typo Analysis"
+author: "Louis Shaw"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+    theme: united
+    highlight: tango
+    number_sections: yes
+    always_allow_html: yes
+    df_print: paged
+    self_contained: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+    theme: united
+    highlight: tango
+    number_sections: yes
+    always_allow_html: yes
+    df_print: paged
+    self_contained: yes
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r load data, include=FALSE}
+if(!require("pacman")) install.packages("pacman")
+# devtools::install_github("pewresearch/pewmethods", build_vignettes = TRUE)
+pacman::p_load(data.table, tidyverse, ggplot2, broom, lemon, janitor, knitr)
+
+huberWhiteSD <- function(model){
+    lmtest::coeftest(model, sandwich::vcovHC(model, type="HC1")) %>% 
+        return()
+}
+
+BITBlue <- "#0098DB"
+BITOrange <- "#FFB549"
+BITBlue2 <- "#A0CFEB"
+BITRed <- "#E59AAA"
+BITBlack <- "#4D4F53"
+BITGreen <- "#72CE9B"
+BITYellow <- "#FADA63"
+BITGrey <- "#DBE2E9"
+
+
+dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
+    janitor::clean_names()
+
+covars <- grep(colnames(dt), pattern="cov", value=T)
+covars <- paste0(covars, collapse=" + ")
+
+treat_order <- c("BAU", "No stimulus" ,"Good practice", "Keep everything", "Ways to win", "Epic downtime")
+treat_labels <- c("Business as Usual","No Advert", "Good Practice", "Low Risk to Potential Reward", "Ease of Winning","Fun-framing")
+
+dt <- dt %>% 
+    mutate(treatment=factor(treatment, levels=treat_order, 
+                            labels=treat_labels))
+
+## Get rid of multi-collinearity
+dt <- dt %>%
+    mutate(slots_cov2=ifelse(slots_cov=="Slot Gambler", slots_cov, "Non-slot Gambler, inc non-gambler"))
+```
+
+# What's the best way to re-run the Good Practice arm?
+
+This document hopes to answer that question by answering three smaller ones:
+
+-   What's our best guess at the treatment effect if we re-run?
+
+-   Is there evidence people didn't read the RTP information in the typo data? ("*£7 for every £10"*)
+
+-   Are there any alternative arms we can tag on?
+
+# What's our best guess at the treatment effect if we re-run?
+
+It's challenging to split out the differences in panel participants and the treatment effects. There's [good evidence](https://docs.google.com/presentation/d/11VsDdDC1arKAbxnNzepLAkJye0AXWbaQahWF3UkR-u0/edit#slide=id.g1e4e0bb4d2f_2_11) the MISGroup gamblers are different to Lucid gamblers. We'll ignore the MISGroup panel and just focus on Lucid participants. Note because of this the N's will be different to the results in the results deck. 
+
+## Balance
+First let's check there's balance between the BAU and the Good-Practice gamblers. 
+```{r echo=FALSE}
+dt <- dt %>% 
+    filter(panel=="Lucid")
+
+normalised_diff <- function(name, discrete=TRUE, value=1,data=dt){
+    ## name is the column name
+    ## discrete is whether it is a numeric value of you'd like to calculate the mean for whether it is equal to a certain category
+    ## value is, if it's discrete, the value you'd like to compute the mean wrt
+    if(discrete){mat <- data %>% 
+        filter(panel=="Lucid") %>% 
+        filter(treatment %in% c("Good Practice", "Business as Usual")) %>% 
+        summarise(mean=mean(eval(parse(text=name))==value),
+                  var=var(eval(parse(text=name))==value),
+                  .by=treatment) %>%
+        ## BAU is row one [1,]
+        ## Good practice is row two [2,]
+        arrange(treatment) %>% 
+        ## Remove names and convert to numeric
+        select(-1) %>% 
+        as.matrix()}
+    else{mat <- data %>% 
+        filter(treatment %in% c("Good Practice", "Business as Usual")) %>% 
+        summarise(mean=mean(eval(parse(text=name))),
+                  var=var(eval(parse(text=name))),
+                  .by=treatment) %>%
+        ## BAU is row one [1,]
+        ## Good practice is row two [2,]
+        arrange(treatment) %>% 
+        ## Remove names and convert to numeric
+        select(-1) %>% 
+        as.matrix()}
+    
+    data.table(name=name,
+               BAU_mean = mat[1,"mean"],
+               BAU_sd=sqrt(mat[1,"var"]), 
+               GP_mean=mat[2,"mean"],
+               GP_sd=sqrt(mat[2,"var"]),
+               normalised_diff=(mat[2,"mean"]-mat[1,"mean"])/sqrt(0.5*(mat[2,"var"]+mat[1,"var"]))) %>% return()
+}
+
+hold <- list()
+hold[["gambler"]] <- normalised_diff("gambler_cov", discrete=T, value="Gambler")
+hold[["age"]] <- normalised_diff("age2", discrete=F)
+hold[["gender"]] <- normalised_diff("gender_cov", value="Female")
+
+hold[["urban"]] <- normalised_diff(name="urban_cov", discrete=T, value="Urban")
+
+hold[["location"]] <- dt %>% 
+    normalised_diff(name="location_cov", discrete=T, value="Wales, Scotland and Northern Ireland")
+hold[["short_pgsi"]] <- dt %>%
+    mutate(pgsi_total=ifelse(gambler_cov=="Non-gambler",0,pgsi_total)) %>% 
+ normalised_diff(name="pgsi_total", discrete = F, data=.)
+hold[["degree_cov"]] <- dt %>% 
+    normalised_diff(data=.,"degree_cov", value="Degree")
+hold[["slots"]] <- dt %>% 
+    normalised_diff("slots_cov", value="Slot Gambler", data=.)
+
+hold[["income"]] <- normalised_diff("income_cov", value="Above median")
+hold[["ethnicity"]] <- normalised_diff("ethnicity_cov", value="White")
+hold[["problem"]] <- normalised_diff("pgsi_cov", value="5. Problem gambler")
+
+data.table::rbindlist(hold) %>% 
+    arrange(-normalised_diff) %>%
+    mutate(across(where(is.numeric), function(x){round(x,3)})) %>%
+    select(!contains("sd")) %>% 
+    ## Force in the sample size
+    rbind(data.table(name="Sample size (n)", BAU_mean=1358, GP_mean=736, normalised_diff=NA_real_), .) %>% 
+    knitr::kable(x=., caption = "Balance Checks: BAU versus Good Practice")
+# dt[treatment %in% c("Good Practice", "Business as Usual"),.N,by=treatment]
+```
+
+All covariates have normalised differences below 0.25, Imbens and Rubin (2015, Ch.14). Though the good practice arm had fewer gamblers (8pp lower) but who gambled more intensely (12% problem gamblers versus 7.3% in the BAU arm). The Good Practice arm were recruited after the BAU arm after the typo, so they are the "stragglers" in the population.
+
+## Treatment effects in the Good Practice arm
+Assuming the re-recruited are, in expectation, balanced in unobservables between the Good Practice and BAU arm we have an unbiased estimators for treatment effects. This means our best forecast of the treatment effects for an exact re-run can be determined from the old experiment. Here we run through the analysis for the main behavioural markers. 
+
+```{r}
+TE_store <- dt %>% 
+    filter(panel=="Lucid") %>% 
+    mutate(con_bet=ifelse(is.na(total_bet), 0, total_bet)) %>% 
+    mutate(no_bets=ifelse((no_bets%%2)==0, no_bets/2, (no_bets+1)/2)) %>% 
+    mutate(con_spins=ifelse(is.na(no_bets), 0, no_bets)) %>% 
+    summarise(n=n(),play=mean(I(play=="Yes")),
+              conditional_bet=mean(total_bet, na.rm=T), 
+              unconditional_bet=mean(con_bet),
+              conditional_spins=mean(no_bets,na.rm=T),
+              unconditional_spins=mean(con_spins),.by=treatment) %>% 
+    filter(treatment %in% c("Business as Usual", "Good Practice")) %>% 
+    select(-n) %>% 
+    data.table::transpose(.,make.names = T) %>% 
+    transmute(TE=`Good Practice` - `Business as Usual`) %>% 
+    pull(TE)
+    # data.table(event=c("play","conditional_bet","unconditional_bet","conditional_spins","unconditional_spins"),.)
+
+
+dt %>% 
+    filter(panel=="Lucid") %>% 
+    mutate(con_bet=ifelse(is.na(total_bet), 0, total_bet)) %>% 
+    mutate(no_bets=ifelse((no_bets%%2)==0, no_bets/2, (no_bets+1)/2)) %>% 
+    mutate(con_spins=ifelse(is.na(no_bets), 0, no_bets)) %>% 
+    summarise(n=n(),play=mean(I(play=="Yes")),
+              conditional_bet=mean(total_bet, na.rm=T), 
+              unconditional_bet=mean(con_bet),
+              conditional_spins=mean(no_bets,na.rm=T),
+              unconditional_spins=mean(con_spins),.by=treatment) %>% 
+    mutate(play=paste0(round(play*100, 0),"%"),
+           across(contains(c("bet")), function(x){round(x, 0)}),
+           across(contains("spins"), function(x){round(x,1)})) %>% 
+    arrange(treatment) %>% 
+    knitr::kable()
+```
+
+Therefore our forecast treatment effect for play behaviour is +`r 100*round(TE_store[1],3)`pp. Two things to note:
+
+* We wouldn't be powered to detect this effect in the re-run
+* It's a backfire
+
+However on amount staked and number of spins the treatment effects for both conditional and unconditional are in the direction we expected! In particular Good Practice - BAU treatment effects:
+
+* Conditional amount bet treatment effect: `r round(TE_store[2],0)` tokens bet.
+* Unconditional amount bet treatment effect: `r round(TE_store[3],0)` tokens bet
+* Conditional number of spins treatment effect: `r round(TE_store[4],1)` spins.
+* Unconditional number of spins treatment effect: `r round(TE_store[5],1)` spins. 
+
+So we're looking at a reduction of about 1 spin on a base of 12 (unconditionally) as a result of the Good Practice arm. In the first section of the appendix we show there is insufficient statistical evidence to confidently say the Good Practice arm had different play %, unconditional amount bet and unconditional number of spins. The strongest evidence is for the play %. 
+
+Later in the appendix we show the results for the rest of the headline findings:
+
+* There is a small reduction in T&C comprehension (BAU 3.85 $\to$ GP 3.76)
+* There is a significant increase in positive sentiment, and a noticeable though not significant increase in negative sentiment towards the GP advert.
+* The GP arm led to higher % saying they wanted to play the game. 
+* There was no detectable difference in recognition on the Meta feed, though it was the highest amongst the adverts.
+* There was no detectable difference in people regretting playing.
+
+## Sugrouping the decision to play
+This is a *very* exploratory section looking at how being a gambler or slot gambler influences the decision to play. This is to help explain the backfire.
+
+First let's have a look at the interaction between decision to play and being a gambler by treatment arm. 
+```{r}
+dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    # filter(treatment!="Good Practice") %>% 
+    summarise(play_pp=mean(I(played==1)), .by=c("gambler_cov", "treatment")) %>% 
+    pivot_wider(names_from=gambler_cov, values_from=play_pp) %>% 
+    mutate(diff=Gambler-`Non-gambler`) %>% 
+    arrange(treatment) %>%
+    left_join(y-., x=count(dt, treatment, gambler) %>% filter(gambler==1) %>% select(-gambler) %>% rename(n_gambler=n), by="treatment") %>% 
+    left_join(y=., x=count(dt,treatment), by="treatment") %>%
+    mutate(across(c(`Non-gambler`, Gambler), function(x){paste0(100*round(x,3), "%")})) %>% 
+    mutate(diff=paste0(100*round(diff,3), "pp")) %>% 
+    knitr::kable()
+```
+This table shows you that the largest difference in play decision is in the Good Practice arm, at 31.5pp, fully 10 points more than the next best. We don't yet know whether this is random noise so I've run a regression looking at the interaction between being a gambler and each treatment arm, with our usual covariates:
+```{r}
+dt %>% 
+    filter(panel=="Lucid") %>% 
+    glm(formula=I(play=="Yes")~treatment*gambler +  pgsi_cov + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov , family="binomial") %>% 
+     broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    select(coefficient,estimate, p.value) %>%
+    left_join(y=., x=dt %>% 
+        count(treatment, gambler) %>%  mutate(coefficient=ifelse(gambler==1, paste0(treatment,":gambler"), paste0(treatment))) %>% 
+        select(coefficient, n), by="coefficient") %>% 
+    filter(!grepl(coefficient, pattern="Business as Usual")) %>% 
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    rename(n_cell=n) %>% 
+    knitr::kable()
+```
+Controlling for covariates eliminates the significance of the interaction term. Nonetheless, it is substantial relative to other advert coefficients. The coefficient means gamblers in the good practice arm have `r round(exp(0.3536),2)` times the odds of playing relative to non-gamblers in the good practice arm, all else equal.  
+
+Next let's have a look at whether the same result holds for our slot sample. 
+```{r}
+dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    # filter(treatment!="Good Practice") %>% 
+    summarise(play_pp=mean(I(played==1)), .by=c("slots_cov2", "treatment")) %>% 
+    pivot_wider(names_from=slots_cov2, values_from=play_pp) %>% 
+    mutate(diff=`Slot Gambler`-`Non-slot Gambler, inc non-gambler`) %>% 
+    arrange(treatment)  %>%
+    left_join(y=.,x= count(dt, treatment, slots_cov2) %>% 
+                  filter(slots_cov2=="Slot Gambler") %>% 
+                  select(-slots_cov2) %>% 
+                  rename(n_slots=n), by="treatment") %>% 
+    left_join(y=., x=count(dt,treatment), by="treatment") %>%
+    mutate(across(c(`Non-slot Gambler, inc non-gambler`, `Slot Gambler`), function(x){paste0(100*round(x,3), "%")})) %>% 
+    mutate(diff=paste0(100*round(diff,3), "pp")) %>% 
+knitr::kable()
+```
+The difference is somewhat smaller now - let's have a look controlling for covariates.
+```{r}
+dt2 <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
+    janitor::clean_names()
+covars <- grep(colnames(dt), pattern="cov", value=T)
+covars <- paste0(covars, collapse=" + ")
+treat_order <- c("BAU", "No stimulus" ,"Good practice", "Keep everything", "Ways to win", "Epic downtime")
+treat_labels <- c("Business as Usual","No Advert", "Good Practice", "Low Risk to Potential Reward", "Ease of Winning","Fun-framing")
+
+dt2 <- dt2 %>% 
+    mutate(treatment=factor(treatment, levels=treat_order, 
+                            labels=treat_labels))
+
+dt2 %>% 
+    filter(panel=="Lucid") %>% 
+    glm(formula=I(play=="Yes")~treatment*slots_cov + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    select(coefficient,estimate, p.value) %>% 
+    mutate(coefficient=str_remove(coefficient,pattern="slots_cov")) %>%
+    left_join(y=., x=dt2 %>% filter(panel=="Lucid") %>%  
+                  count(treatment, slots_cov) %>% 
+                  mutate(coefficient=case_when(slots_cov=="Non-slot Gambler"~paste0(treatment,":Non-slot Gambler"),
+                                               slots_cov=="Slot Gambler"~paste0(treatment, ":Slot Gambler"), 
+                                               TRUE~paste0(treatment))) %>% 
+                  select(coefficient, n), by="coefficient") %>%
+    filter(!grepl(coefficient, pattern="Business as Usual")) %>% 
+    mutate(across(where(is.numeric), function(x){round(x,4)}))  %>% 
+    rename(n_cell=n) %>%
+    knitr::kable()
+
+rm(dt2)
+```
+Here we see that whilst the good practice arm appears to have a positive impact on all gamblers (previous sub-group) but it has an outside impact on non-slot gamblers. Again, please note that we're doing a lot of underpowered work here, but the results are suggestive.
+
+
+Overall then it seems like the differences between groups we identified in balance checking played some role. There's tentative evidence gamblers, and in particular non-slot gamblers, played more in the good practice arm though we're lacking power.
+
+## Conclusion of treatment effects
+This section looked at the Lucid survey participants (post-typo) and compared them to the BAU. We found a backfire in decision to play that doesn't appear to be an artefact of recrtuiting later. The higher play percentage is driven by increased play probabilities amongst gamblers, and particularly amongst non-slot gamblers.
+
+There was very tentative evidence in other areas that, though more people played, they played more carefully. If the effect exists, it is in the order of 1 fewer spins and we will be unlikely to detect that in the main experiment.
+
+# Is there any evidence people didn't read the advert?
+In this section we focus our comparisons not on the BAU to GP arm, but on the good practice arm before and after the typo. We will look for evidence that people read the text. If that's the case, we would expect to see differences between the two arms in the following variables:
+
+* Made them want to play
+* Decision to play
+
+Because the odds information is presented in the game screen correctly, we'd imagine anything after the decision to play will be "corrected". We'll nonetheless look at other play behaviour and some downstream variables, like regret. 
+
+
+```{r Read in Typo Data}
+dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/data_typo_cleaned.csv") %>% 
+    janitor::clean_names()
+
+dt <- dt %>%    
+    mutate(gender_cov=case_when(gender2=="Male"~"Male",
+                                gender2=="Female"~"Female",
+                                TRUE~"Other")) 
+dt2 <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
+    janitor::clean_names()
+
+dt <- dt %>% 
+    mutate(treatment="Typo - Good Practice") %>% 
+    select(-typo) %>% 
+    rbind(., dt2)
+rm(dt2)  
+
+## Sort out the treatment order
+treat_order <- c("Good practice","Typo - Good Practice", "BAU", "No stimulus", "Keep everything", "Ways to win", "Epic downtime")
+treat_labels <- c("Good Practice","Typo - Good Practice" ,"Business as Usual","No Advert",  "Low Risk to Potential Reward", "Ease of Winning","Fun-framing")
+
+dt <- dt %>% 
+    mutate(treatment=factor(treatment, levels=treat_order, 
+                            labels=treat_labels))
+
+## Get rid of multi-collinearity
+dt <- dt %>%
+    mutate(slots_cov2=ifelse(slots_cov=="Slot Gambler", slots_cov, "Non-slot Gambler, inc non-gambler"))
+
+## Potential unobservable differences between MISGROUP and Lucid. REMOVE LUCID.
+dt <- dt %>% 
+    filter(panel=="Lucid")
+
+##### Balance #####
+normalised_diff <- function(name, discrete=TRUE, value=1,data=dt){
+    ## name is the column name
+    ## discrete is whether it is a numeric value of you'd like to calculate the mean for whether it is equal to a certain category
+    ## value is, if it's discrete, the value you'd like to compute the mean wrt
+    if(discrete){mat <- data %>% 
+        filter(panel=="Lucid") %>% 
+        filter(treatment %in% c("Good Practice", "Typo - Good Practice")) %>% 
+        summarise(mean=mean(eval(parse(text=name))==value),
+                  var=var(eval(parse(text=name))==value),
+                  .by=treatment) %>%
+        ## GP is row one [1,]
+        ## Typo is row two [2,]
+        arrange(treatment) %>% 
+        ## Remove names and convert to numeric
+        select(-1) %>% 
+        as.matrix()}
+    else{mat <- data %>% 
+        filter(treatment %in% c("Good Practice", "Typo - Good Practice")) %>% 
+        summarise(mean=mean(eval(parse(text=name))),
+                  var=var(eval(parse(text=name))),
+                  .by=treatment) %>%
+        ## BAU is row one [1,]
+        ## Good practice is row two [2,]
+        arrange(treatment) %>% 
+        ## Remove names and convert to numeric
+        select(-1) %>% 
+        as.matrix()}
+    data.table(name=name,
+               GP_mean = mat[1,"mean"],
+               GP_sd=sqrt(mat[1,"var"]), 
+               Typo_mean=mat[2,"mean"],
+               Typo_sd=sqrt(mat[2,"var"]),
+               normalised_diff=(mat[2,"mean"]-mat[1,"mean"])/sqrt(0.5*(mat[2,"var"]+mat[1,"var"]))) %>% return()
+}
+hold <- list()
+hold[["gambler"]] <- normalised_diff("gambler_cov", discrete=T, value="Gambler")
+hold[["age"]] <- normalised_diff("age2", discrete=F)
+hold[["gender"]] <- normalised_diff("gender_cov", value="Female")
+
+hold[["urban"]] <- normalised_diff(name="urban_cov", discrete=T, value="Urban")
+
+hold[["location"]] <- dt %>% 
+    normalised_diff(name="location_cov", discrete=T, value="Wales, Scotland and Northern Ireland")
+hold[["short_pgsi"]] <- dt %>%
+    mutate(pgsi_total=ifelse(gambler_cov=="Non-gambler",0,pgsi_total)) %>% 
+ normalised_diff(name="pgsi_total", discrete = F, data=.)
+hold[["degree_cov"]] <- dt %>% 
+    normalised_diff(data=.,"degree_cov", value="Degree")
+hold[["slots"]] <- dt %>% 
+    normalised_diff("slots_cov", value="Slot Gambler", data=.)
+
+hold[["income"]] <- normalised_diff("income_cov", value="Above median")
+hold[["ethnicity"]] <- normalised_diff("ethnicity_cov", value="White")
+hold[["problem"]] <- normalised_diff("pgsi_cov", value="5. Problem gambler")
+
+data.table::rbindlist(hold) %>% 
+    arrange(-normalised_diff) %>%
+    mutate(across(where(is.numeric), function(x){round(x,3)})) %>%
+    select(!contains("sd")) %>% 
+    ## Force in the sample size
+    rbind(data.table(name="Sample size (n)", GP_mean=736, Typo_mean=1145, normalised_diff=NA_real_), .) %>% 
+    knitr::kable()
+```
+Again all normalised differences are less than 0.25 indicating reasonable balance. The typo sample were more likely to be gamblers though were 3.8pp less likely to be a problem gambler, had lower total PGSI scores and were less likely to have a degree. 
+
+It's worth noting that the typo individuals were recruited later, though the median difference is ~ 13 days, and the new Lucid sample was collected in the 7 days immediately after the 5th of June.
+
+```{r}
+dt %>%
+  filter(grepl(treatment, pattern = "Good Practice")) %>%
+  summarise(
+    min_date = as.Date(min(submitdate)),
+    median_date = as.Date(median(submitdate)), 
+    max_date = as.Date(max(submitdate)),
+    .by = treatment
+  ) %>% 
+    knitr::kable()
+```
+
+## Exactly the same proportion of people recognised it as a gambling advert
+
+```{r}
+# dt %>% 
+#     count(r_adverts_gamble, treatment) %>% 
+#     filter(grepl("Good Practice", treatment))
+
+dt %>% 
+    summarise(n_base=n(), recognise_pp=mean(I(r_adverts_gamble=="Yes")), .by=treatment) %>% 
+    arrange(treatment) %>% 
+    slice(1:3) %>% 
+    mutate(recognise_pp=paste0(100*round(recognise_pp,4),"%")) %>% 
+    knitr::kable()
+```
+
+74.59% recognised it as a gambling advert in both arms. This is a reassuring balance check! Now let's ask whether, amongst those who recognised the advert, a greater proportion saw the return to play information was wrong. 
+```{r}
+## "" didn't get the previous question right
+dt %>% 
+    filter(r_gamble_rtp!="") %>% 
+    summarise(
+        n_base=n(),
+        rtp_pp_false=mean(I(r_gamble_rtp=="False")), 
+        .by=treatment) %>% 
+    arrange(treatment) %>% 
+    slice(1:3) %>% 
+    mutate(rtp_pp_false=paste0(100*round(rtp_pp_false,3),"%")) %>% 
+    knitr::kable()
+```
+So a 6.2pp increase in the proportion of people recalling that the rtp wasn't 94%. Does this survive controlling for observable differences? Because of the same percentage recognising it as a gambling advert, I've excluded those who didn't answer this question. 
+```{r}
+dt %>% 
+    filter(panel=="Lucid") %>%
+    filter(treatment!="No Advert", r_gamble_rtp!="") %>% 
+    glm(formula=I(r_gamble_rtp=="False")~treatment + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov + slots_cov2, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(treatment=term) %>% 
+    select(treatment,estimate, p.value) %>% 
+    left_join(y=., x=count(dt %>% filter(panel=="Lucid"), treatment), join_by(treatment)) %>% 
+    filter(!if_any(everything(), is.na)) %>% 
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    # rename(n_cell=n) %>%
+    knitr::kable()
+```
+So there's evidence of an (exploratory) significant increase in those correctly identifying the RTP amongst those who identified a gambling advert on their feed controlling for our usual alternatives. 
+
+Is there any evidence that this result is driven primarily by those with prior exposure to slots? Gambling?
+```{r}
+dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    summarise(rtp_pp=mean(I(r_gamble_rtp=="False")), .by=c("gambler_cov", "treatment")) %>% 
+    pivot_wider(names_from=gambler_cov, values_from=rtp_pp) %>% 
+    mutate(diff=Gambler-`Non-gambler`) %>% 
+    arrange(treatment) %>%
+    left_join(y-., x=count(dt, treatment, gambler) %>% filter(gambler==1) %>% select(-gambler) %>% rename(n_gambler=n), by="treatment") %>% 
+    left_join(y=., x=count(dt,treatment), by="treatment") %>%
+    filter(treatment!="No Advert") %>%
+    mutate(across(c(`Non-gambler`, Gambler), function(x){paste0(100*round(x,3), "%")})) %>% 
+    mutate(diff=paste0(100*round(diff,3), "pp")) %>% 
+    knitr::kable()
+```
+So the non-gamblers with the typo were less than 1pp less likely to conclude the RTP was false compared to the usual good practice arm, whilst gamblers were 6.4pp more likely than the normal good practice arm. Or as a diagram:
+```{r echo=FALSE} 
+plot_dt <- dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    filter(treatment!="No Advert") %>%
+    summarise(rtp_pp=mean(I(r_gamble_rtp=="False")), .by=c("gambler_cov", "treatment")) %>% 
+    pivot_wider(names_from=gambler_cov, values_from=rtp_pp) %>%
+    mutate(diff=Gambler-`Non-gambler`) %>%
+    pivot_longer(cols=c(`Non-gambler`, Gambler), names_to="gambler_cov", values_to = "rtp_pp") %>% 
+    mutate(gambler_cov=factor(gambler_cov)) 
+
+
+plot_dt %>% 
+    ggplot(aes(y=fct_rev(treatment), x=rtp_pp, fill=gambler_cov)) + 
+    geom_col(aes(group=gambler_cov), position="dodge", alpha=0.9) + 
+    geom_text(inherit.aes = F, data=filter(plot_dt, gambler_cov=="Non-gambler"), aes(y=treatment, x=rtp_pp, label=paste0("Diff=",100*round(diff,3), "pp")), nudge_y=0.25, nudge_x = 0.005, hjust=0, size=3) + 
+    labs(y=NULL, x="Percent correctly saying RTP isn't 94%") + 
+    scale_x_continuous(expand=c(0,0), 
+                       breaks=seq(0,0.40,0.05),
+                       labels=scales::percent_format()) + 
+    theme_classic() + 
+    theme(panel.grid.major.x = element_line(linewidth=0.3, colour=BITGrey)) +
+    coord_cartesian(xlim=c(0,0.351)) + 
+    scale_fill_manual(values=c(BITBlue, BITBlue2), 
+                      guide=guide_legend(reverse=T)) + 
+    geom_text(data=filter(plot_dt, gambler_cov=="Gambler"), inherit.aes = F, 
+              aes(x=rtp_pp, y=treatment, label=paste0(100*round(rtp_pp,2),"%")), alpha=0.07, size=3, nudge_y=-0.2, nudge_x=-0.02) + 
+    geom_text(data=filter(plot_dt, gambler_cov=="Non-gambler"), inherit.aes = F, 
+              aes(x=rtp_pp, y=treatment, label=paste0(100*round(rtp_pp,2),"%")), alpha=0.05, size=3, nudge_y=0.2, nudge_x=-0.02) 
+
+```
+We're underpowered here, but does that survive covariates?
+```{r}
+dt %>% 
+    filter(panel=="Lucid") %>%
+    filter(treatment!="No Advert", r_gamble_rtp!="") %>%
+    mutate(gambler_cov=factor(gambler_cov, levels=c("Non-gambler","Gambler"))) %>% 
+    glm(formula=I(r_gamble_rtp=="False")~treatment*gambler_cov + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    select(coefficient,estimate, p.value) %>% 
+    mutate(coefficient=str_remove(coefficient,pattern="gambler_cov")) %>%
+    left_join(y=., x=dt %>% filter(panel=="Lucid") %>%  
+                  count(treatment, gambler_cov) %>% 
+                  mutate(coefficient=ifelse(gambler_cov=="Gambler", paste0(treatment,":Gambler"), paste0(treatment)))  %>% select(coefficient, n), by="coefficient") %>%
+    filter(!if_any(.cols=everything(), is.na)) %>% 
+    mutate(across(where(is.numeric), function(x){round(x,4)}))  %>% 
+    rename(n_cell=n) %>%
+    knitr::kable()
+```
+
+```{r}
+dt %>% 
+    filter(panel=="Lucid") %>%
+    filter(treatment!="No Advert", r_gamble_rtp!="") %>% 
+    glm(formula=I(r_gamble_rtp=="False")~treatment*slots_cov + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    select(coefficient,estimate, p.value) %>% 
+    mutate(coefficient=str_remove(coefficient,pattern="slots_cov")) %>%
+    left_join(y=., x=dt %>% filter(panel=="Lucid") %>%  
+                  count(treatment, slots_cov) %>% 
+                  mutate(coefficient=case_when(slots_cov=="Non-slot Gambler"~paste0(treatment,":Non-slot Gambler"),
+                                               slots_cov=="Slot Gambler"~paste0(treatment, ":Slot Gambler"), 
+                                               TRUE~paste0(treatment))) %>% 
+                  select(coefficient, n), by="coefficient")  %>%
+    filter(!if_any(.cols=everything(), is.na)) %>% 
+    mutate(across(where(is.numeric), function(x){round(x,4)}))  %>% 
+    rename(n_cell=n) %>%
+    knitr::kable()
+```
+We see that the marginal effect of the good practice arm is roughly twice as large for slot gamblers than non-slot gamblers, though neither are statistically significant. 
+
+To conclude this section - the typo led to a 6.2pp increase in the proportion of people correctly identifying from the social media feed that the advert didn't have a 94% RTP. The raw values indicate that this is driven mostly by gamblers, with slot gamblers being particularly impacted - though the subgrouping results weren't statistically significant so are at best suggestive. 
+
+
+## pre_sent want + trust
+```{r}
+percent_label <- function(x, digits=3){paste0(100*round(x,digits=digits),"%")}
+hold <- dt %>% 
+    filter(treatment!="No Advert") %>% 
+    mutate(pre_sent_want=ifelse(pre_sent_want %in% c("Moderately","Very much"), 1,0)) %>% 
+    summarise(n_base=n(), want_pp=mean(pre_sent_want), .by=treatment) %>% 
+    arrange(treatment) %>% 
+    mutate(want_pp=percent_label(want_pp))
+
+dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    filter(treatment!="No Advert") %>% 
+    mutate(pre_sent_want=ifelse(pre_sent_want %in% c("Moderately","Very much"), 1,0)) %>%
+    glm(formula=pre_sent_want~treatment + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov + slots_cov2, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(treatment=term) %>% 
+    select(treatment, p.value) %>% 
+    left_join(x=hold, y=., by="treatment") %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    rename(cov_p.value=p.value) %>%
+    knitr::kable()
+
+```
+We see there's a significant reduction in those stating they'd like to play - this suggests people are reading the caption. 
+
+## Play %
+```{r}
+hold <- dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    # filter(treatment!="Good Practice") %>% 
+    summarise(n_base=n(),play_pp=mean(I(played==1)), .by=c("treatment")) %>% 
+    arrange(treatment) %>%
+    mutate(play_pp=percent_label(play_pp))
+
+dt %>% 
+    # filter(treatment %in% c("Good Practice", "Business as Usual")) %>%
+    filter(panel=="Lucid") %>%
+    glm(formula=I(play=="Yes")~treatment + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov + slots_cov2, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(treatment=term) %>% 
+    select(treatment, p.value) %>% 
+    left_join(x=hold, y=., by="treatment") %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    rename(cov_p.value=p.value) %>%
+    knitr::kable(caption="First play decision by treatment arm - Lucid only")
+```
+There was a 4pp reduction in the proportion of people saying they wanted to play as a result of the typo. This is marginally significant (the difference in p.values between Ease of Winning and Typo is due to both sample size and covariates).
+
+## why_play chance/earn versus why_not_play chance/lose
+
+We asked people why they did or didn't play. If people read the RTP there should be a difference in the % saying they have a good chance of winning or wanting to increase their earnings. 
+```{r}
+dt %>% 
+    filter(play2=="Yes") %>%
+    summarise(
+        n_play_base=n(),
+        play_chance_pp=mean(I(why_play_chance=="Yes")),
+        play_earn_pp=mean(I(why_play_earn=="Yes")),
+        .by=treatment) %>% 
+    mutate(across(contains("pp"), .fns=function(x){percent_label(x, digits=2)})) %>% 
+    arrange(treatment) %>% 
+    knitr::kable()
+```
+So people in the good practice arm who chose to play said they wanted to earn more money in the ~ same proportion, but were 4pp less likely to say they had a good chance of winning. Not too large an effect. 
+
+```{r}
+dt %>% 
+    filter(play2!="Yes") %>%
+    summarise(
+        n_no_play_base=n(),
+        no_play_chance_pp=mean(I(why_not_play_chance=="Yes")),
+        no_play_earn_pp=mean(I(why_not_play_lose=="Yes")),
+        .by=treatment) %>% 
+    mutate(across(contains("pp"), .fns=function(x){percent_label(x, digits=2)})) %>% 
+    arrange(treatment) %>% 
+    knitr::kable()
+```
+We see the percentage of people saying they didn't play because they had a bad chance of winning goes up 4pp, and those who say they didn't want to lose money goes up 3pp. These are the highest rates of any treatment arm, suggesting those that chose not to play read the typo. 
+
+## win_subj (more tokens)
+```{r}
+dt %>% 
+    mutate(think_win=case_when(grepl(pattern="more", x=win_subj)~"more",
+                         grepl(pattern="less",x=win_subj)~"less",
+                         TRUE~"not sure")) %>% 
+    summarise(
+        n_base=n(),
+        win_subj=mean(I(think_win=="more")), 
+        lose_subj=mean(I(think_win=="less")),
+        idk_subj=mean(I(think_win=="not sure")),
+        .by="treatment") %>% 
+    arrange(treatment) %>% 
+    mutate(across(contains("subj"), .fns=function(x){percent_label(x, digits=2)})) %>% 
+    knitr::kable()
+    
+```
+There's roughly a 8pp reduction those saying they think they will definitely or probably win money as a result of the typo. Likewise there's a 11pp increase in those saying they'll lose money. This question was asked to both those who chose to play and those who chose not to. 
+
+I find it interesting the good practice arm's win % is highest, and the typo arm's lose % is highest; this may indicate including RTP information is increasing price sensitivity but that the usual RTP is seen as good value. More on this in section 4. 
+
+## goes_money
+"Based on the advert, to what extent do you think Fruit Rush is a way to make money?" - asked to those who play:
+```{r}
+dt %>% 
+    filter(play2=="Yes") %>% 
+    mutate(goes_money=ifelse(goes_money %in% c("Moderately","Very much"), 1,0)) %>% 
+    summarise(n_base=n(),make_money=mean(I(goes_money)), .by="treatment") %>% 
+    mutate(make_money=percent_label(make_money, digits=2)) %>% 
+    arrange(treatment) %>% 
+    knitr::kable()
+```
+So the typo brought this back into line with the rest of the group, but the Good Practice arm led to large increases in those thinking they'd win money. I think this explains a good chunk of the backfire we saw: £7 loss for every £100 bet doesn't sound that bad. 
+
+# Is there another arm we could add?
+The odds trial looked at the best way of presenting odds information about the slot games. The "£7 in every £100" was the recommendation, but this still uses the average to describe the distribution. This is not the "typical" session, and we've seen that providing the RTP seems to increase people's money motives to gamble. The average is sensitive to outliers, so viewers might mistake the mean for the typical outcome and therefore overestimate their chances of winning (in the absence of free spins). 
+
+
+Are there other ways of presenting the information that we could test in the re-run predictiv experiment?
+
+* Median RTP: this will be zero. Can we choose the median session? Representative session.
+* Percentage of sessions that lose money (similar to [CFD trading](https://www.forbes.com/uk/advisor/investing/what-is-cfd-trading/#:~:text=In%20December%202022%2C%20the%20FCA%20described%20CFDs%20as,of%20customers%20lose%20money%20when%20investing%20in%20CFDs.)). 
+
+
+## Across all spins what's the actual return to player observed?
+I'm going to calculate the [observed RTP](https://www.gamblingcommission.gov.uk/licensees-and-businesses/guide/live-return-to-player-performance-monitoring-of-games-of-chance#how-to-calculate-return-to-player-rtp) over all spins as:
+
+$$RTP = \frac{\sum_{i=1}^n\operatorname{totalWon_i}}{\operatorname{\sum_{i=1}^ntotalBet_i}}$$
+
+```{r fruit_rush data cleaning, eval=FALSE, include=FALSE, echo=FALSE}
+### Ad harms trial (all spins) ###
+
+## Read in the typo data
+dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/data_typo_cleaned.csv") %>% 
+    janitor::clean_names()
+
+## Sort gender out
+dt <- dt %>%    
+    mutate(gender_cov=case_when(gender2=="Male"~"Male",
+                                gender2=="Female"~"Female",
+                                TRUE~"Other")) 
+## Read in the original data
+dt2 <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
+    janitor::clean_names()
+
+## Merge the two
+dt <- dt %>% 
+    mutate(treatment="Typo - Good Practice") %>% 
+    select(-typo) %>% 
+    rbind(., dt2)
+## Remove the older data
+rm(dt2)  
+
+## Sort out the treatment order
+treat_order <- c("Good practice","Typo - Good Practice", "BAU", "No stimulus", "Keep everything", "Ways to win", "Epic downtime")
+treat_labels <- c("Good Practice","Typo - Good Practice" ,"Business as Usual","No Advert",  "Low Risk to Potential Reward", "Ease of Winning","Fun-framing")
+
+dt <- dt %>% 
+    mutate(treatment=factor(treatment, levels=treat_order, 
+                            labels=treat_labels))
+
+
+fruit_rush <- list()
+
+fruit_rush[["Ad harms 1"]] <- dt %>% 
+    mutate(no_bets=ifelse((no_bets%%2)==0, no_bets/2, (no_bets+1)/2)) %>%
+    select(submitdate, panel, treatment, no_bets, total_bet, total_loss, total_won, final_bal) %>%
+    filter(!if_all(.cols=c(no_bets, total_bet, total_loss, total_won), .fns=is.na)) %>%
+    ## Convert into monetary units
+    mutate(across(.cols=c(total_bet, total_loss, total_won, final_bal),function(x){x/200})) %>% 
+    mutate(start_bal=0.55, net_win=final_bal-start_bal) %>% 
+    mutate(trial="Ad harms 1") %>% 
+    mutate(free_spins=10)
+
+rm(dt)
+
+### Odds trial ###
+dt_odds <- haven::read_dta(file="G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Odds comprehension/Adam Stata Odds Trial/Odds Trial cleaned - Merged - Pre WS5 Analysis.dta") %>% 
+    setDT()
+
+## Approximately same even and odd, no issues in this trial.
+# dt_odds %>% 
+#     select(nobets) %>% 
+#     summarise(even_spins=mean(I(nobets%%2==0), na.rm=T))
+
+fruit_rush[["odds"]] <- dt_odds %>%
+    ## They recruited from both but didn't tag
+    mutate(panel="Unsure") %>% 
+    ## Rename mixture
+    rename(final_bal=finalbal, total_bet=totalbet, 
+           no_bets=nobets, total_loss=totalloss,
+           total_won=totalwon) %>% 
+    ## Rename the treatment variables
+    mutate(treatment=factor(treatment, labels=c("Salient RTP 1",
+                                                "Salient RTP 2",
+                                                "Discrete RTP",
+                                                "House edge", 
+                                                "Simplified loss - volatility",
+                                                "Simplified loss - graph"))) %>% 
+    ## Remove those who didn't spin
+    filter(!if_all(.cols=c(no_bets, total_loss, total_won), .fns=is.na)) %>%
+    ## Promotion gives 10 free spins
+    mutate(treatment=ifelse(promotion==1, paste0(treatment, ": free_spins"), paste0(treatment))) %>% 
+    ## Create the free_spins variable
+    mutate(free_spins=ifelse(promotion==1, 10,0)) %>%
+    ## Define the start balance according to promotion (all endowmnet==2)
+    mutate(start_bal=ifelse(promotion==1, 1.15, 1.85)) %>% 
+    ## Select the variables                     
+    select(submitdate, panel, treatment, no_bets, total_bet, total_loss, total_won, final_bal, start_bal, free_spins) %>%
+    ## Those who start but don't finish for some reason are codes as NA
+    ## By inspection they all have zero wins and losses
+    mutate(final_bal=ifelse(is.na(final_bal),start_bal, final_bal)) %>%
+    ## Calculate net_win by starting balance
+    mutate(net_win=round(final_bal-start_bal,2)) %>% 
+    mutate(trial="odds")
+
+rm(dt_odds)
+
+### Activity statements trial ###
+dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Activity Statements - Predictiv Trial/Cleaned Data Steve 2.csv")
+# dt2 %>% 
+#     count(turtle)
+#     summarise(mean(turtle))
+
+dt <- dt %>% 
+    janitor::clean_names()
+
+dt[, spins1 := ifelse(spins1 %% 2 > 0, (spins1 + 1)/2, spins1/2)]
+dt[, spins2 := ifelse(spins2 %% 2 > 0, (spins2 + 1)/2, spins2/2)]
+dt[, spins3 := ifelse(spins3 %% 2 > 0, (spins3 + 1)/2, spins3/2)]
+
+# names <- paste0("spins",c(1,2,3))
+# dt %>%
+#     mutate(across(all_of(names), function(x){ifelse(x%%2>0, (x+1)/2, x/2)}))
+
+## Select some columns
+dt <- dt %>% 
+    mutate(panel="Unsure") %>% 
+    ## Rename the treatment variables
+    mutate(treatment=factor(treatment, labels=c("No statement", "Simplified", 
+                                                "Industry", "Prediction correction", 
+                                                "Call to action"))) %>% 
+    mutate(free_spins=0) %>% 
+    select(submitdate, panel, treatment, free_spins,
+           paste0("end_balance",1:3),
+           paste0("spins",1:3),
+           paste0("won",1:3),
+           paste0("loss",1:3), 
+           paste0("total_bet",1:3))
+
+## Turn each round into its own dataset
+dt1 <- dt %>% 
+    select(submitdate, panel, treatment, free_spins, ends_with("1")) %>% 
+    rename_with(~ gsub("[0-9]", "", .)) %>% 
+    mutate(treatment=paste0(treatment,"1"))
+
+dt2 <- dt %>% 
+    select(submitdate, panel, treatment, free_spins, ends_with("2")) %>% 
+    rename_with(~ gsub("[0-9]", "", .)) %>% 
+    mutate(treatment=paste0(treatment,"2"))
+
+dt <- dt %>% 
+    select(submitdate, panel, treatment, free_spins, ends_with("3")) %>% 
+    rename_with(~ gsub("[0-9]", "", .)) %>% 
+    mutate(treatment=paste0(treatment,"3")) %>% 
+    rbind(dt1, dt2, .)
+
+rm(dt1, dt2)
+## Remove the NA rounds
+dt <- dt %>% 
+    filter(!if_any(everything(),is.na)) %>%
+    mutate(trial="Activity Statements", 
+           start_bal=1.85) %>% 
+    rename(final_bal=end_balance, no_bets=spins, 
+           total_won=won, total_loss=loss) %>% 
+    mutate(net_win=final_bal-start_bal)
+
+# setdiff(colnames(fruit_rush$`Ad harms 1`), colnames(dt))
+fruit_rush[["activity_statements"]] <- dt
+rm(dt)
+
+## Chance all the data columns to same format for merge
+fruit_rush <- lapply(fruit_rush, function(data){
+    data$submitdate <- as.Date(data$submitdate)
+    return(data)
+})
+
+## Bind them altogether
+dt <- rbindlist(fruit_rush, use.names=T) %>% 
+    relocate(submitdate, trial, treatment, panel, everything())
+rm(fruit_rush)
+
+fwrite(x=dt, file="G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/Fruit Rush Diagnostics/fruit_rush_all_spins.csv")
+```
+
+```{r}
+dt <- fread(file="G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/Fruit Rush Diagnostics/fruit_rush_all_spins.csv")
+
+dt %>% 
+    summarise(n_rounds=n(),
+              total_spins=sum(no_bets), 
+              total_bet=sum(total_bet),
+              total_won=sum(total_won),
+              rtp=sum(total_won)/sum(total_bet), 
+              .by = c("trial"))
+
+```
+The return to player in the odds trial was 37%?! That's odd. Digging a little deeper:
+```{r}
+dt %>% 
+    summarise(n_rounds=n(),
+              med_spins=median(no_bets), 
+              med_bet=median(total_bet),
+              med_won=median(total_won),
+              mean_winnings=mean(net_win),
+              rtp=sum(total_won)/sum(total_bet), 
+              .by = c("trial", "free_spins"))
+```
+We know that you have to win 0.7 if you did 10 spins during the free spins. There looks like a glitch in that those who bet £1 in the odds trial had a total win of £0.20, which given the blocking must be wrong.  
+
+```{r}
+dt %>% 
+    filter(trial=="odds") %>% 
+    filter((no_bets%%10)==0) %>% 
+    select(no_bets, total_won,total_loss, net_win, total_bet, free_spins) %>% 
+    filter(total_won<0.35) %>%
+    arrange(no_bets, total_won) %>% 
+    head() %>% 
+    knitr::kable()
+```
+I think this means we should reject the odds data altogether and focus on the other two trials. It's either that the coding of total_win/total_bet was wrong or there was an actual glitch in the game during the trial. 
+
+```{r}
+dt %>% 
+    filter(trial!="odds") %>% 
+    summarise(n_rounds=n(),
+              total_spins=sum(no_bets), 
+              total_bet=sum(total_bet),
+              total_won=sum(total_won),
+              rtp=sum(total_won)/sum(total_bet)) %>% 
+    knitr::kable()
+
+```
+Across nearly 440,000 spins we have an empirical return to player of 74%. This is because our slot game is not independent (outcomes are not uniformly distributed, and so fail the GCs operator technical standards). 
+
+## What's the binary % of sessions that win money, excluding free spins?
+
+I'm going to use the history of the non-free spins Fruit Rush experiments to avoid the issue around different play behaviour when playing with house money.
+```{r}
+# dt %>%
+#     filter(free_spins==0) %>%
+#     summarise(mean(I(net_win<0))) # 0.823415
+
+# dt %>%
+#     filter(free_spins==0) %>%
+#     summarise(n=n(), 
+#               min_date=min(submitdate), 
+#               max_date=max(submitdate),.by=trial) %>% 
+#     mutate(N=sum(n))# 17,997
+
+dt %>%
+    filter(free_spins==0) %>% 
+    ggplot(aes(x=net_win)) +
+    geom_segment(aes(x=0, xend=0, y=0, yend=0.823415), colour=BITBlue, linewidth=0.5, linetype="dashed") +
+    geom_segment(aes(x=-3, xend=0, y=0.823415, yend=0.823415), colour=BITBlue, linewidth=0.5, linetype="dashed") + 
+    geom_point(aes(x=0, y=0.823415), size=2, colour=BITBlue) + 
+    stat_ecdf() + 
+    coord_cartesian(xlim=c(-2,1.03)) + 
+    scale_y_continuous(expand=c(0,0), breaks=seq(0,1,0.1), 
+                       minor_breaks = seq(0.1,0.9,0.05), labels=scales::percent_format()) +
+    scale_x_continuous(expand=c(0,0), breaks=seq(-2,1,0.5), minor_breaks=seq(-2,1,0.1), labels=scales::dollar_format(prefix="£")) + 
+    theme_classic() + 
+    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", size=0.3),
+          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", size=0.3),
+          plot.caption = element_text(hjust=0)) + 
+    geom_text(aes(x=-1, y=0.823415+0.04, label="\"82% of sessions lose money on this game\""), colour=BITBlue) + 
+    labs(y="Fraction of the data", x="Net Position (£)", 
+         title="The distribution of losses playing Fruit Rush", 
+         subtitle="Free-spins sessions excluded", 
+         caption="N=17,997 slot game sessions collected in our odds comprehension (n=1,625) and activity statement (n=16,372) experiments.\nData collected by BIT March 2022 - July 2023")
+
+
+```
+
+The above graph pools all treatments. We can look at the simplified volatility no-promotion part of the odds trial and the first round of the activity statements trial for all treatments. The answer goes up to 85.5%.
+
+```{r}
+# dt %>% 
+#     filter(free_spins==0, 
+#            treatment %in% c("Call to action1","Industry1", "No statement1", "Prediction correction1", "Simplified1", "Simplified loss - volatility")) %>% 
+#     summarise(losing_sessions=mean(I(net_win<0))) ## 0.8558164	
+
+# dt %>%
+#     filter(free_spins==0) %>%
+#     filter(treatment %in% c("Call to action1","Industry1", "No statement1", 
+#                      "Prediction correction1", "Simplified1", 
+#                      "Simplified loss - volatility")) %>% 
+#     summarise(
+#         ## 250 odds
+#         ## 5,458 AS
+#         n=n(),
+#         ## March 2022
+#         min_date=min(submitdate),
+#         ## July 2023
+#         max_date=max(submitdate),.by=trial) %>%
+#     mutate(N=sum(n))# 5,708
+
+dt %>%
+    filter(free_spins==0) %>% 
+    filter(treatment %in% c("Call to action1","Industry1", "No statement1", 
+                     "Prediction correction1", "Simplified1", 
+                     "Simplified loss - volatility")) %>% 
+    ggplot(aes(x=net_win)) +
+    geom_segment(aes(x=0, xend=0, y=0, yend=0.8558164), colour=BITBlue, linewidth=0.5, linetype="dashed") +
+    geom_segment(aes(x=-3, xend=0, y=0.8558164, yend=0.8558164), colour=BITBlue, linewidth=0.5, linetype="dashed") + 
+    geom_point(aes(x=0, y=0.8558164), size=2, colour=BITBlue) + 
+    stat_ecdf() + 
+    coord_cartesian(xlim=c(-2,1.03)) + 
+    scale_y_continuous(expand=c(0,0), breaks=seq(0,1,0.1), 
+                       minor_breaks = seq(0.1,0.9,0.05), labels=scales::percent_format()) +
+    scale_x_continuous(expand=c(0,0), breaks=seq(-2,1,0.5), minor_breaks=seq(-2,1,0.1), labels=scales::dollar_format(prefix="£")) + 
+    theme_classic() + 
+    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", size=0.3),
+          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", size=0.3),
+          plot.caption = element_text(hjust=0)) + 
+    geom_text(aes(x=-1, y=0.8558164+0.04, label="\"86% of sessions lose money on this game\""), colour=BITBlue) + 
+    labs(y="Fraction of the data", x="Net Position (£)", 
+         title="The distribution of losses playing Fruit Rush", 
+         subtitle="Free-spins sessions excluded; first round AS and simplified volatility odds", 
+         caption="N=5,708 slot game sessions collected in our odds comprehension (n=250) and activity statement (n=5,458) experiments.\nOnly first round of activity statement trial included, and only simplified loss - volatility arm of odds included.\nData collected by BIT March 2022 - July 2023")
+```
+A few things are worth noting:
+
+* Our slot game is played with small stakes and house money
+* Our slot game has an empirical return to play of 74%. This means real slot games may have a lower percentage.
+* Our slot game is in breach of the [remote gambling and software technical standards (RTS) 7.A](https://www.gamblingcommission.gov.uk/standards/remote-gambling-and-software-technical-standards/rts-7-generation-of-random-outcomes) because of the non-independence of outcomes.
+* The figure is influenced by both game dynamics and player behaviour. If people stop when they're up (Esther) then this figure will be too high, if they stop when they run out of funds (my Mum) then too low.
+
+Nonetheless, I think this framing is worth testing as it tells people that most people don't win money in a typical session. It can still be used for competition between slot games, and it has a precedent in the CFD trading space ([FCA](https://www.forbes.com/uk/advisor/investing/what-is-cfd-trading/#:~:text=In%20December%202022%2C%20the%20FCA%20described%20CFDs%20as,of%20customers%20lose%20money%20when%20investing%20in%20CFDs.)).  
+
+Alternative suggestions from my family were:
+
+* Probability of having a net win on every spin (1/10 in our game)
+* What's the median return to player over all sessions? Use that instead of the average
+
+
+# Supplementary Results (Appendix)
+## Regression analysis for Lucid only BAU versus GP
+Now let's use regression analysis to attempt to control for observable differences between the two groups. 
+### Play decision
+```{r}
+dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
+    janitor::clean_names()
+
+covars <- grep(colnames(dt), pattern="cov", value=T)
+covars <- paste0(covars, collapse=" + ")
+
+treat_order <- c("BAU", "No stimulus" ,"Good practice", "Keep everything", "Ways to win", "Epic downtime")
+treat_labels <- c("Business as Usual","No Advert", "Good Practice", "Low Risk to Potential Reward", "Ease of Winning","Fun-framing")
+
+dt <- dt %>% 
+    mutate(treatment=factor(treatment, levels=treat_order, 
+                            labels=treat_labels))
+
+## Get rid of multi-collinearity
+dt <- dt %>%
+    mutate(slots_cov2=ifelse(slots_cov=="Slot Gambler", slots_cov, "Non-slot Gambler, inc non-gambler"))
+
+dt %>% 
+    filter(panel=="Lucid") %>% 
+    glm(formula=I(play=="Yes")~treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="binomial") %>% 
+     broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+We see don't have sufficient evidence to reject that the Good Practice arm has the same play percentage as the BAU arm, although the point estimate is the highest amongst the treatment adverts once you control for covariates. 
+
+### Amount staked - unconditional only
+```{r}
+dt %>% 
+    filter(panel=="Lucid") %>%
+    mutate(total_bet=ifelse(is.na(total_bet),0,total_bet)) %>% 
+    glm(formula=total_bet~treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="gaussian") %>% 
+    lmtest::coeftest(x=., vcov=sandwich::vcovHC(., "HC3")) %>% 
+     broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+Controlling for covariates we have little evidence the difference between the Good Practice arm and the BAU is different from zero. 
+
+### Number of Spins - unconditional only
+```{r}
+dt %>%
+    filter(panel=="Lucid") %>% 
+    mutate(no_bets=ifelse(is.na(no_bets),0,no_bets)) %>%
+    mutate(no_bets=ifelse((no_bets%%2)==0, no_bets/2, (no_bets+1)/2)) %>% 
+    glm(data=.,no_bets~treatment + ethnicity_cov + location_cov + 
+                       urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="poisson") %>%
+    lmtest::coeftest(x=., vcov=sandwich::vcovHC(., "HC3")) %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+Again, there's very little evidence the treatment effect isn't zero for the good practice arm. 
+
+
+### There is a roughly no change in T&Cs comprehension
+```{r, warning=FALSE}
+## Coding zeros as IDK
+dt[, terms.new.Yes := ifelse(terms_new == "Yes", 1, 0)]
+dt[, terms.expiry.Yes := ifelse(terms_expiry == "Yes", 1, 0)]
+dt[, terms.age.Yes := ifelse(terms_age == "Yes", 1, 0)]
+dt[, terms.apply.No := ifelse(terms_apply == "No", 1, 0)]
+dt[, terms.valid.No := ifelse(terms_valid == "No", 1, 0)]
+
+dt[, termsTotal := terms.new.Yes + terms.expiry.Yes + terms.age.Yes + terms.apply.No + 
+      terms.valid.No]
+
+dt[treatment!="No Advert", .(terms_total=mean(termsTotal)), by=treatment] %>% 
+    mutate(terms_total=round(terms_total,2)) %>% 
+    arrange(treatment) %>% 
+    knitr::kable()
+```
+There's evidence it slightly reduced comprehension, though it isn't statistically significant. 
+
+### Positive sentiment is significantly higher in the Good Practice arm
+
+```{r}
+convert_values <- function(x){
+  ifelse(x == "", NA_character_, ifelse(x %in% c("Not at all","A little"), FALSE, TRUE))
+}
+
+names <- colnames(dt) %>% 
+    grep(pattern="senti_game", value=T) %>% 
+    subset(x=.,!grepl(x=.,pattern="time"))
+
+pos_names <- names %>% subset(grepl(x=.,pattern="(excited|control|happy)"))
+neg_names <- setdiff(names, pos_names)
+
+# dt %>% count(senti_game_control)
+
+dt %>% 
+    # select(all_of(names)) %>% 
+    ## Convert the values
+    mutate(across(all_of(names), convert_values)) %>% 
+    mutate(across(all_of(names), as.logical)) %>% 
+    ## Sum pos_names and calculate their mean
+    mutate(pos_sum=eval(parse(text=paste0(pos_names, collapse="+"))),
+           pos_sum=pos_sum/length(pos_names)) %>%
+    ## Sum neg_names and calculate their mean
+    mutate(neg_sum=eval(parse(text=paste0(neg_names, collapse="+"))), 
+           neg_sum=neg_sum/length(neg_names)) %>% 
+    select(treatment, pos_sum, neg_sum) %>% 
+    ## Create the mean for each
+    summarise(across(.cols=c(pos_sum, neg_sum), function(x) mean(x, na.rm=T)), .by=treatment) %>% 
+    arrange(treatment) %>% 
+    mutate(across(where(is.numeric), function(x){paste0(100*round(x,2),"%")}))
+```
+There is more positive and negative sentiment towards the new advert. Regression tables for negative sentiment index:
+```{r}
+dt %>% 
+    # select(all_of(names)) %>% 
+    mutate(across(all_of(names), convert_values)) %>% 
+    mutate(across(all_of(names), as.logical)) %>% 
+    ## Create the variables, summing the positive and negative variables
+    mutate(pos_sum=eval(parse(text=paste0(pos_names, collapse="+")))) %>% 
+    mutate(pos_sum=pos_sum/length(pos_names)) %>%
+    mutate(neg_sum=eval(parse(text=paste0(neg_names, collapse="+")))) %>%  
+    mutate(neg_sum=neg_sum/length(neg_names)) %>%
+    ## Run the regression on neg_sum
+    glm(formula=neg_sum~ treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="gaussian") %>%
+    ##' Regression on pos_sum
+    # glm(formula=pos_sum~ treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="gaussian") %>%
+    ## Apply heteroskedastic robust SEs
+    lmtest::coeftest(.,sandwich::vcovHC(., type="HC3")) %>%
+    broom::tidy() %>%
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+The increase in negative sentiment is too small to detect. Regression tables for the positive sentiment index:
+```{r}
+dt %>% 
+    # select(all_of(names)) %>% 
+    mutate(across(all_of(names), convert_values)) %>% 
+    mutate(across(all_of(names), as.logical)) %>% 
+    ## Create the variables, summing the positive and negative variables
+    mutate(pos_sum=eval(parse(text=paste0(pos_names, collapse="+")))) %>% 
+    mutate(pos_sum=pos_sum/length(pos_names)) %>%
+    mutate(neg_sum=eval(parse(text=paste0(neg_names, collapse="+")))) %>%  
+    mutate(neg_sum=neg_sum/length(neg_names)) %>%
+    ## Run the regression on neg_sum
+    # glm(formula=neg_sum~ treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="gaussian") %>%
+    ## Regression on pos_sum
+    glm(formula=pos_sum~ treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="gaussian") %>%
+    ## Apply heteroskedastic robust SEs
+    lmtest::coeftest(.,sandwich::vcovHC(., type="HC3")) %>%
+    broom::tidy() %>%
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+So there is quite strong statistical evidence, even controlling for covariates, that positive sentiment goes up. 
+
+### Made them want to play significantly higher in Good Practice arm
+```{r}
+convert_values <- function(x) {
+  ifelse(x == "", NA_character_, ifelse(x %in% c("Not at all","A little"), FALSE, TRUE))
+}
+
+names <- colnames(dt) %>% 
+    grep(pattern="pre_sent", value=T) %>% 
+    subset(x=.,!grepl(x=.,pattern="time"))
+
+dt %>% 
+    filter(treatment!="No Advert") %>% #nrow()
+    select(treatment, all_of(names)) %>% 
+    mutate(across(all_of(names), convert_values)) %>% 
+    mutate(across(all_of(names), as.logical)) %>% 
+    summarise(across(all_of(names), function(x){mean(x)}), .by=treatment) %>% 
+    select(treatment,pre_sent_want) %>% 
+    mutate(across(where(is.numeric), function(x){paste0(100*round(x,3),"%")})) %>% 
+    arrange(treatment)
+```
+So there's a ~5pp increase in saying they want to play. Statistical testing shows evidence the Good Practice arm increased the percentage saying they wanted to play. 
+
+```{r}
+convert_values <- function(x) {
+  ifelse(x == "", NA_character_, ifelse(x %in% c("Not at all","A little"), FALSE, TRUE))
+}
+
+dt %>% 
+    filter(treatment!="No stimulus") %>% #nrow()
+    mutate(across(all_of(names), convert_values)) %>%
+    mutate(pre_sent_want=as.logical(pre_sent_want)) %>% 
+    glm(data=., formula=pre_sent_want ~ treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="binomial") %>% 
+    broom::tidy() %>% 
+    filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt %>% filter(treatment!="No Advert") %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+
+### META feed recognition - no change.
+```{r}
+dt %>% 
+    mutate(r_adverts_gamble=I(r_adverts_gamble=="Yes")) %>% 
+    summarise(n=n(),perc=100*mean(r_adverts_gamble),.by=treatment) %>% 
+    arrange(treatment) %>% #mutate(sum(n))
+    mutate(perc=paste0(round(perc,1),"%")) %>% 
+    knitr::kable()
+```
+
+```{r}
+dt %>% 
+    mutate(r_adverts_gamble=I(r_adverts_gamble=="Yes")) %>%
+    glm(formula=r_adverts_gamble~treatment + ethnicity_cov + location_cov + urban_cov + age_cov  + gender_cov + income_cov + degree_cov + slots_cov + pgsi_cov, family="binomial") %>% 
+    broom::tidy() %>% 
+   filter(grepl(term, pattern="treatment")) %>% 
+    mutate(term=str_remove(term, "treatment")) %>% 
+    rename(coefficient=term) %>% 
+    cbind(.,dt  %>% count(treatment) %>% slice(-1) %>% select(n)) %>% 
+    select(coefficient, n,estimate, p.value, std.error) %>%
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
+    knitr::kable()
+```
+There is very little evidence the Good Practice arm is different from the BAU in terms of recognition on the META feed. 
+
+### 1pp reduction in regretting playing, not significant
+```{r}
+names <- dt %>% 
+    colnames() %>% 
+    grep(value=T, pattern="regret") %>% 
+    subset(!grepl(.,pattern="time$"))
+
+dt %>%
+    select(treatment, all_of(names)) %>% 
+    mutate(across(all_of(names), str_to_lower),
+           across(all_of(names), function(x){ifelse(x=="", NA_character_,x)})) %>% 
+    mutate(across(all_of(names), function(x){ifelse(grepl("bad",x),1,
+                                                    ifelse(is.na(x),x,0))})) %>%
+    mutate(across(all_of(names), as.numeric)) %>%
+    mutate(regret_sum=eval(parse(text=paste0(names,collapse="+")))) %>%
+    summarise(across(c(all_of(names), regret_sum), function(x){mean(x, na.rm=T)}),.by=treatment) %>% 
+    select(treatment,regret_play) %>%
+    mutate(across(where(is.numeric),function(x){paste0(100*round(x,3),"%")})) %>%
+    arrange(treatment) %>% 
+    knitr::kable()
+```
+There's a 1pp reduction in those saying they regretted playing the game overall. This is quite small, though it is the lowest of all the adverts shown. 
+
+## Old Code
+```{r, eval=FALSE, include=FALSE}
+dt[, list(n=.N, play_pp=round(mean(I(play=="Yes")),3)), by=treatment] %>% 
+    arrange(treatment) %>% 
+    mutate(play_pp=100*play_pp) %>% 
+    knitr::kable()
+```
+
+## Glossary of Terms
+
+* Turnover: The total of all stakes made on the game, this will include reinvested winnings awarded during play.
+* Win: The total of all prizes awarded during game play. 
+* GGY: Turnover minus win.
+
+Our game is currently in breach of [remote gambling and software technical standards (RTS) 7.A](https://www.gamblingcommission.gov.uk/standards/remote-gambling-and-software-technical-standards/rts-7-generation-of-random-outcomes). 
+
+
+
