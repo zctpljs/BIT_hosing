@@ -54,8 +54,8 @@ dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT pr
 covars <- grep(colnames(dt), pattern="cov", value=T)
 covars <- paste0(covars, collapse=" + ")
 
-treat_order <- c("BAU", "No stimulus" ,"Good practice", "Keep everything", "Ways to win", "Epic downtime")
-treat_labels <- c("Business as Usual","No Advert", "Good Practice", "Low Risk to Potential Reward", "Ease of Winning","Fun-framing")
+treat_order <- c("BAU" ,"Good practice", "Keep everything", "Ways to win", "Epic downtime", "No stimulus")
+treat_labels <- c("Business as Usual", "Good Practice", "Low Risk to Potential Reward", "Ease of Winning","Fun-framing","No Advert")
 
 dt <- dt %>% 
     mutate(treatment=factor(treatment, levels=treat_order, 
@@ -1062,6 +1062,7 @@ Alternative suggestions from my family were:
 # Supplementary Results (Appendix)
 ## Regression analysis for Lucid only BAU versus GP
 Now let's use regression analysis to attempt to control for observable differences between the two groups. 
+
 ### Play decision
 ```{r}
 dt <- fread("G:/.shortcut-targets-by-id/1xeoIymK6XBPXKQis_PMj3VkFOXVxbjbm/BIT project data/GPRU - Data/GPRU - Ad Harms Predictiv 1/ad_harms_pred_1_cleaned.csv") %>% 
