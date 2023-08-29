@@ -1034,8 +1034,8 @@ dt %>%
                        minor_breaks = seq(0.1,0.9,0.05), labels=scales::percent_format()) +
     scale_x_continuous(expand=c(0,0), breaks=seq(-2,1,0.5), minor_breaks=seq(-2,1,0.1), labels=scales::dollar_format(prefix="£")) + 
     theme_classic() + 
-    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", size=0.3),
-          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", size=0.3),
+    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", linewidth=0.3),
+          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", linewidth=0.3),
           plot.caption = element_text(hjust=0)) + 
     geom_text(aes(x=-1, y=0.8558164+0.04, label="\"86% of sessions lose money on this game\""), colour=BITBlue) + 
     labs(y="Fraction of the data", x="Net Position (£)", 
