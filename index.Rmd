@@ -590,6 +590,7 @@ dt %>%
     rename(n_cell=n) %>%
     knitr::kable()
 ```
+
 We see that the marginal effect of the good practice arm is roughly twice as large for slot gamblers than non-slot gamblers, though neither are statistically significant. 
 
 To conclude this section - the typo led to a 6.2pp increase in the proportion of people correctly identifying from the social media feed that the advert didn't have a 94% RTP. The raw values indicate that this is driven mostly by gamblers, with slot gamblers being particularly impacted - though the subgrouping results weren't statistically significant so are at best suggestive. 
@@ -622,6 +623,7 @@ dt %>%
     knitr::kable()
 
 ```
+
 We see there's a significant reduction in those stating they'd like to play - this suggests people are reading the caption. 
 
 ## Play %
@@ -648,6 +650,7 @@ dt %>%
     rename(cov_p.value=p.value) %>%
     knitr::kable(caption="First play decision by treatment arm - Lucid only")
 ```
+
 There was a 4pp reduction in the proportion of people saying they wanted to play as a result of the typo. This is marginally significant (the difference in p.values between Ease of Winning and Typo is due to both sample size and covariates).
 
 ## why_play chance/earn versus why_not_play chance/lose
@@ -665,6 +668,7 @@ dt %>%
     arrange(treatment) %>% 
     knitr::kable()
 ```
+
 So people in the good practice arm who chose to play said they wanted to earn more money in the ~ same proportion, but were 4pp less likely to say they had a good chance of winning. Not too large an effect. 
 
 ```{r}
@@ -679,6 +683,7 @@ dt %>%
     arrange(treatment) %>% 
     knitr::kable()
 ```
+
 We see the percentage of people saying they didn't play because they had a bad chance of winning goes up 4pp, and those who say they didn't want to lose money goes up 3pp. These are the highest rates of any treatment arm, suggesting those that chose not to play read the typo. 
 
 ## win_subj (more tokens)
@@ -698,6 +703,7 @@ dt %>%
     knitr::kable()
     
 ```
+
 There's roughly a 8pp reduction those saying they think they will definitely or probably win money as a result of the typo. Likewise there's a 11pp increase in those saying they'll lose money. This question was asked to both those who chose to play and those who chose not to. 
 
 I find it interesting the good practice arm's win % is highest, and the typo arm's lose % is highest; this may indicate including RTP information is increasing price sensitivity but that the usual RTP is seen as good value. More on this in section 4. 
@@ -713,6 +719,7 @@ dt %>%
     arrange(treatment) %>% 
     knitr::kable()
 ```
+
 So the typo brought this back into line with the rest of the group, but the Good Practice arm led to large increases in those thinking they'd win money. I think this explains a good chunk of the backfire we saw: £7 loss for every £100 bet doesn't sound that bad. 
 
 # Is there another arm we could add?
@@ -948,7 +955,7 @@ dt %>%
 
 Across nearly 440,000 spins we have an empirical return to player of 74%. This is because our slot game is not independent (outcomes are not uniformly distributed, and so fail the GCs operator technical standards). 
 
-## What's the binary % of sessions that win money, excluding free spins?
+## What's the % of sessions that win money, excluding free spins?
 
 I'm going to use the history of the non-free spins Fruit Rush experiments to avoid the issue around different play behaviour when playing with house money.
 ```{r}
@@ -975,8 +982,8 @@ dt %>%
                        minor_breaks = seq(0.1,0.9,0.05), labels=scales::percent_format()) +
     scale_x_continuous(expand=c(0,0), breaks=seq(-2,1,0.5), minor_breaks=seq(-2,1,0.1), labels=scales::dollar_format(prefix="£")) + 
     theme_classic() + 
-    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", size=0.3),
-          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", size=0.3),
+    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", linewidth=0.3),
+          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", linewidth=0.3),
           plot.caption = element_text(hjust=0)) + 
     geom_text(aes(x=-1, y=0.823415+0.04, label="\"82% of sessions lose money on this game\""), colour=BITBlue) + 
     labs(y="Fraction of the data", x="Net Position (£)", 
@@ -1025,8 +1032,8 @@ dt %>%
                        minor_breaks = seq(0.1,0.9,0.05), labels=scales::percent_format()) +
     scale_x_continuous(expand=c(0,0), breaks=seq(-2,1,0.5), minor_breaks=seq(-2,1,0.1), labels=scales::dollar_format(prefix="£")) + 
     theme_classic() + 
-    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", size=0.3),
-          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", size=0.3),
+    theme(panel.grid.major=element_line(colour="grey", linetype="dashed", linewidth=0.3),
+          panel.grid.minor=element_line("#EEEEEE", linetype="dashed", linewidth=0.3),
           plot.caption = element_text(hjust=0)) + 
     geom_text(aes(x=-1, y=0.8558164+0.04, label="\"86% of sessions lose money on this game\""), colour=BITBlue) + 
     labs(y="Fraction of the data", x="Net Position (£)", 
