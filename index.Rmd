@@ -1041,6 +1041,7 @@ dt %>%
          subtitle="Free-spins sessions excluded; first round AS and simplified volatility odds", 
          caption="N=5,708 slot game sessions collected in our odds comprehension (n=250) and activity statement (n=5,458) experiments.\nOnly first round of activity statement trial included, and only simplified loss - volatility arm of odds included.\nData collected by BIT March 2022 - July 2023")
 ```
+
 A few things are worth noting:
 
 * Our slot game is played with small stakes and house money
@@ -1105,6 +1106,7 @@ dt %>%
     mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
     knitr::kable(caption="Play Percentage")
 ```
+
 We see don't have sufficient evidence to reject that the Good Practice arm has the same play percentage as the BAU arm, although the point estimate is the highest amongst the treatment adverts once you control for covariates. 
 
 ### Amount staked - unconditional only
@@ -1123,6 +1125,7 @@ dt %>%
     mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
     knitr::kable(caption = "Unconditional Amount Staked")
 ```
+
 Controlling for covariates we have little evidence the difference between the Good Practice arm and the BAU is different from zero. 
 
 ### Number of Spins - unconditional only
@@ -1143,6 +1146,7 @@ dt %>%
     mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
     knitr::kable(caption="Robust Poisson Regression for Number of Spins")
 ```
+
 Again, there's very little evidence the treatment effect isn't zero for the good practice arm. 
 
 ### There is a roughly no change in T&Cs comprehension
@@ -1162,6 +1166,7 @@ dt[treatment!="No Advert", .(terms_total=mean(termsTotal)), by=treatment] %>%
     arrange(treatment) %>% 
     knitr::kable(caption=str_to_title("Average number of T&Cs recalled"))
 ```
+
 There's evidence it slightly reduced comprehension, though it isn't statistically significant. 
 
 ### Positive sentiment is significantly higher in the Good Practice arm
@@ -1198,6 +1203,7 @@ dt %>%
     mutate(across(where(is.numeric), function(x){paste0(100*round(x,2),"%")})) %>% 
     knitr::kable(caption=str_to_title("Positive and Negative Sentiment Index"))
 ```
+
 There is more positive and negative sentiment towards the new advert. Regression tables for negative sentiment index:
 ```{r}
 dt %>% 
@@ -1227,6 +1233,7 @@ dt %>%
 
 
 ```
+
 The increase in negative sentiment is too small to detect. Regression tables for the positive sentiment index:
 ```{r}
 dt %>% 
@@ -1253,6 +1260,7 @@ dt %>%
     mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
     knitr::kable(caption=str_to_title("OLS Regression of positive sentiment score"))
 ```
+
 So there is quite strong statistical evidence, even controlling for covariates, that positive sentiment goes up. 
 
 ### Made them want to play significantly higher in Good Practice arm
@@ -1276,6 +1284,7 @@ dt %>%
     arrange(treatment) %>% 
     kable(caption=str_to_title("Sentiment Q on whether advert made them want to play"))
 ```
+
 So there's a ~5pp increase in saying they want to play. Statistical testing shows evidence the Good Practice arm increased the percentage saying they wanted to play. 
 
 ```{r}
@@ -1321,6 +1330,7 @@ dt %>%
     mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
     knitr::kable(caption=str_to_title("Logistic Regression of recognising gambling advert in socials feed"))
 ```
+
 There is very little evidence the Good Practice arm is different from the BAU in terms of recognition on the META feed. 
 
 ### 1pp reduction in regretting playing, not significant
