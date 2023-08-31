@@ -558,11 +558,11 @@ dt %>%
     rename(coefficient=term) %>% 
     select(coefficient,estimate, p.value) %>% 
     mutate(coefficient=str_remove(coefficient,pattern="gambler_cov")) %>%
-    left_join(y=., x=dt %>% filter(panel=="Lucid") %>%  
+    left_join(y=., x=dt %>% filter(panel=="Lucid", r_gamble_rtp!="") %>%  
                   count(treatment, gambler_cov) %>% 
                   mutate(coefficient=ifelse(gambler_cov=="Gambler", paste0(treatment,":Gambler"), paste0(treatment)))  %>% select(coefficient, n), by="coefficient") %>%
     filter(!if_any(.cols=everything(), is.na)) %>% 
-    mutate(across(where(is.numeric), function(x){round(x,4)}))  %>% 
+    mutate(across(where(is.numeric), function(x){round(x,4)})) %>% 
     rename(n_cell=n) %>%
     knitr::kable()
 ```
@@ -571,7 +571,7 @@ No! But the effect is being driven by gamblers (just too small).
 ```{r}
 dt %>% 
     filter(panel=="Lucid") %>%
-    filter(treatment!="No Advert", r_gamble_rtp!="") %>% 
+    filter(treatment!="No Advert", r_gamble_rtp!="") %>%
     glm(formula=I(r_gamble_rtp=="False")~treatment*slots_cov + ethnicity_cov + location_cov + urban_cov + age_cov + gender_cov + income_cov + degree_cov + pgsi_cov, family="binomial") %>% 
     broom::tidy() %>% 
     filter(grepl(term, pattern="treatment")) %>% 
@@ -579,7 +579,7 @@ dt %>%
     rename(coefficient=term) %>% 
     select(coefficient,estimate, p.value) %>% 
     mutate(coefficient=str_remove(coefficient,pattern="slots_cov")) %>%
-    left_join(y=., x=dt %>% filter(panel=="Lucid") %>%  
+    left_join(y=., x=dt %>% filter(panel=="Lucid", r_gamble_rtp!="") %>%  
                   count(treatment, slots_cov) %>% 
                   mutate(coefficient=case_when(slots_cov=="Non-slot Gambler"~paste0(treatment,":Non-slot Gambler"),
                                                slots_cov=="Slot Gambler"~paste0(treatment, ":Slot Gambler"), 
